@@ -1,0 +1,41 @@
+/*────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  JavaScript Array ‑ Cheat‑Sheet (must‑know methods)
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Category / Idea            Methods to learn           Mutates?   One‑liner
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  Size / type               length, Array.isArray          –      count items / is‑array test
+
+  String conversion         toString, join                 –      turn array → string (join lets you pick separator)
+
+  Lookup / search           find, findIndex, findLast      ✘      first match / its index / last match
+                            includes, indexOf              ✘      simple existence test
+
+  Boolean tests             some, every                    ✘      does *any* / *all* items satisfy rule?
+
+  Side‑effect loop          forEach                        ✘      run a callback once per item (no return)
+
+  Transformation            map, flatMap                   ✘      build new array (flatMap flattens 1 level)
+
+  Filtering                 filter                         ✘      keep only items that pass test
+
+  Reduction / folding       reduce, reduceRight            ✘      collapse list → one value (sum, object, …)
+
+  Copy & slicing            slice, concat, flat, at        ✘      sub‑array, merge, flatten, read via ±index
+
+  Re‑ordering / reversing   reverse, sort                  ✔︎      in‑place reverse / sort
+
+  Adding & removing         push, pop, shift, unshift      ✔︎      add/remove ends
+  (classic)                 splice                         ✔︎      insert/delete anywhere
+
+  Filling / shuffling       fill, copyWithin               ✔︎      overwrite range / copy part within array
+
+  “Immutable twins”         toReversed, toSorted,          ✘      return *new* reversed / sorted / spliced array
+  (ES 2023)                 toSpliced, with                       or replace one element immutably
+
+  Grouping (ES 2024)        Object.groupBy, Map.groupBy    ✘      bucket items by a key
+
+  Iteration helpers         entries, keys, values          ✘      iterators for for…of
+
+───────────────────────────────────────────────────────────────────────────────────────────────────
+  Legend:  ✔︎ = mutates original array   ✘ = returns a fresh value
+───────────────────────────────────────────────────────────────────────────────────────────────────*/
