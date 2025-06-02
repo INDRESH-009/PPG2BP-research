@@ -74,27 +74,30 @@ def segment_and_clean(ppg_ds: np.ndarray,
                       fs_ds: float,
                       do_peakfinder: bool = False) -> list[tuple[np.ndarray, float, float]]:
     """
-    Given downsampled (to fs_ds, e.g. 50 Hz) PPG and ABP, break into nonoverlapping 10 s
-    windows (win_len = 10 * fs_ds samples). For each window:
-      - If any NaNs or constant-zero, drop.
-      - Compute SBP = average of local maxima in ABP (or max if no peaks).
-      - Compute DBP = average of local minima in ABP (or min if no troughs).
-      - If SBP ∉ [70,180] or DBP ∉ [40,110], drop.
-      - Normalize PPG window to zero-mean, unit-variance.
-      - Return (PPG_norm_window, SBP_window, DBP_window).
+    Break down ppg_ds/abp_ds into nonoverlapping 10 s windows at fs_ds (e.g. 50 Hz).
+    Only consider windows whose start >= 20 minutes for *calibration* and *target*.
+    Returns a list of (ppg_norm, SBP, DBP) in chronological order, but only from t >= 20 min.
     """
     valid = []
-    win_len = int(10 * fs_ds)  # 10 s windows at fs_ds, e.g. 10*50 = 500 samples
+    win_len = int(10 * fs_ds)      # e.g. 10 * 50 = 500 samples
     total_samples = len(ppg_ds)
-    num_wins = total_samples // win_len
+    num_wins     = total_samples // win_len
+
+    # Compute the window index corresponding to 20 minutes:
+    #   20 min = 1200 s → at 50 Hz, 1200 s = 60,000 samples. 60,000 // 500 = 120 windows.
+    min_cal_window_index = (20 * 60 * int(fs_ds)) // win_len  # e.g. 120
 
     for w in range(num_wins):
+        if w < min_cal_window_index:
+            # Skip any window that starts before 20 minutes.
+            continue
+
         start = w * win_len
-        end = start + win_len
+        end   = start + win_len
         ppg_win = ppg_ds[start:end]
         abp_win = abp_ds[start:end]
 
-        # T3: must have at least one non-NaN & not all zeros
+        # T3: must not contain NaN and not be all zeros
         if np.isnan(ppg_win).any() or np.isnan(abp_win).any():
             continue
         if np.all(ppg_win == 0) or np.all(abp_win == 0):
@@ -102,13 +105,11 @@ def segment_and_clean(ppg_ds: np.ndarray,
 
         # T4: compute SBP & DBP from abp_win
         if do_peakfinder:
-            # find maxima > 30 mmHg, distance ≈ 0.5 s (fs_ds * 0.5)
             peaks, _ = find_peaks(abp_win, distance=int(0.5 * fs_ds), height=30)
             if len(peaks) > 0:
                 SBP_win = float(np.mean(abp_win[peaks]))
             else:
                 SBP_win = float(np.max(abp_win))
-            # find minima similarly
             troughs, _ = find_peaks(-abp_win, distance=int(0.5 * fs_ds), height=-80)
             if len(troughs) > 0:
                 DBP_win = float(np.mean(abp_win[troughs]))
@@ -123,10 +124,10 @@ def segment_and_clean(ppg_ds: np.ndarray,
         if DBP_win < 40 or DBP_win > 110:
             continue
 
-        # Normalize PPG window
+        # Normalize PPG window to zero-mean, unit-variance
         mu = float(np.mean(ppg_win))
         sigma = float(np.std(ppg_win))
-        if sigma < 1e-6:  # too small → skip
+        if sigma < 1e-6:
             continue
         ppg_norm = ((ppg_win - mu) / sigma).astype(np.float32)
 
@@ -253,9 +254,8 @@ def full_preprocess(raw_dir: str,
 
         # g) T3+T4: segment & clean into non-overlapping 10 s windows
         clean_segs = segment_and_clean(ppg_ds, abp_ds, fs_target, do_peakfinder=False)
-
-        if len(clean_segs) < 1:
-            dropped_t3 += 1
+        if len(clean_segs) < 50:
+            dropped_t5 += 1
             continue
 
         # h) T5: balance segments per subject (50–100)
@@ -325,10 +325,9 @@ def full_preprocess(raw_dir: str,
         for cid in cids:
             segs = balanced_segments[cid]
             # Stack them into arrays
-            PPGs = np.stack([s[0] for s in segs], axis=0)  # (K, 10*fs_target)
+            PPGs = np.stack([s[0] for s in segs], axis=0)
             SBPs = np.array([s[1] for s in segs], dtype=np.float32)
             DBPs = np.array([s[2] for s in segs], dtype=np.float32)
-            SBP_cal, DBP_cal = SBPs[0], DBPs[0]
             SDS_SBP, SDS_DBP = sds_dict[cid]
 
             # Demographics
@@ -337,11 +336,15 @@ def full_preprocess(raw_dir: str,
             weight = float(meta.loc[meta.caseid == cid, "weight"].iloc[0])
             height = float(meta.loc[meta.caseid == cid, "height"].iloc[0])
 
+             # Define SBP_cal and DBP_cal from the first valid segment
+            SBP_cal = segs[0][1]   # the SBP label of window index 0
+            DBP_cal = segs[0][2]   # the DBP label of window index 0
+            
             np.savez_compressed(
                 os.path.join(split_dir, f"{cid}.npz"),
                 PPG_segments=PPGs,   # float32 array shape (K, win_len)
                 SBP_labels=SBPs,     # float32 array shape (K,)
-                DBP_labels=DBPs,     # float32 array shape (K,)
+                DBP_labels=DBPs,  
                 SBP_cal=np.float32(SBP_cal),
                 DBP_cal=np.float32(DBP_cal),
                 SDS_SBP=np.float32(SDS_SBP),
@@ -350,6 +353,7 @@ def full_preprocess(raw_dir: str,
                 sex=sex,
                 weight=np.float32(weight),
                 height=np.float32(height)
+               # the DBP label of window index 0
             )
 
     # (Optional) Save summary CSVs
